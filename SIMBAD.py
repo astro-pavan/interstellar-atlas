@@ -137,14 +137,14 @@ def get_nearest_stars(plx=200, n=4):
 
     print(f'Stars saved: {len(star_table)}')
 
-    star_table.to_csv(f'Stars_plx_{plx}.csv', index=False)
-    companion_table.to_csv(f'Stars_plx_{plx}_companions.csv', index=False)
+    star_table.to_csv(f'simbad/Stars_plx_{plx}.csv', index=False)
+    companion_table.to_csv(f'simbad/Stars_plx_{plx}_companions.csv', index=False)
 
     return star_table
 
 
 def read_table(plx=50):
-    pd.read_csv(f'Stars_plx_{plx}.csv')
+    pd.read_csv(f'simbad/Stars_plx_{plx}.csv')
 
 
 if __name__ == '__main__':

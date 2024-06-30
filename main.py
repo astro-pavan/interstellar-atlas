@@ -316,7 +316,7 @@ def make_sectors(cluster_size=8, cutoff_distance=10, make_web_version=False):
             cluster_cluster_labels.append(list(map_table[division_name]))
 
             if len(map_table) > 0:
-                pixels = make_map(map_table, save=f'map/images/{division_name} {cluster_name}.png', cluster_name=cluster_name,
+                pixels = make_map(map_table, save=f'atlas/images/{division_name} {cluster_name}.png', cluster_name=cluster_name,
                          division_name=division_name)
             else:
                 pixels = []
@@ -335,7 +335,7 @@ def make_sectors(cluster_size=8, cutoff_distance=10, make_web_version=False):
 
         nx.draw(G, nx.spring_layout(G), with_labels=True, node_size=200, node_color='blue', font_size=7,
                 edge_color='gray', font_color='white')
-        plt.savefig(f'map/images/{division_name} LINKS.png', bbox_inches='tight')
+        plt.savefig(f'atlas/images/{division_name} LINKS.png', bbox_inches='tight')
         plt.close()
 
         return cluster_cluster_labels, cluster_pixels
@@ -358,7 +358,7 @@ def make_sectors(cluster_size=8, cutoff_distance=10, make_web_version=False):
     # plt.show()
 
     def make_html_page(division_name, cluster_name, pixels, cluster_labels):
-        f = open(f'map/{division_name} {cluster_name}.html', 'w')
+        f = open(f'atlas/{division_name} {cluster_name}.html', 'w')
         f.write('<!DOCTYPE html>\n<html>\n<head>')
         f.write(f'<title>{division_name}: {cluster_name}</title>')
         f.write('</head>\n<body>')
