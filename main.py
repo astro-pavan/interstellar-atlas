@@ -59,7 +59,7 @@ def replace_greek_abbreviation(s):
     return s
 
 
-table = pd.read_csv(f'Stars_plx_20.csv')
+table = pd.read_csv(f'simbad/Stars_plx_20.csv')
 
 plt.style.use('dark_background')
 sc = None
@@ -381,4 +381,4 @@ def make_sectors(cluster_size=8, cutoff_distance=10, make_web_version=False):
             make_html_page('SECTOR', sector_names[i], sector_pixels[i], sector_sector_labels[i])
 
 
-make_sectors(cluster_size=7, cutoff_distance=6, make_web_version=True)
+make_sectors(cluster_size=7, cutoff_distance=6, make_web_version=False)
