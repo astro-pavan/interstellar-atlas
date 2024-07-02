@@ -110,16 +110,20 @@ def get_nearest_stars(plx=200, n=4):
             result_table.at[i, 'MAIN_ID'] = name_split[1]
         else:
             if name_split[0] in greek_letters and result_table.at[i, 'MAIN_ID'] not in name_replace_exceptions:
-                name_list = list(Simbad.query_objectids(result_table.at[i, 'MAIN_ID'])['ID'])
-                name_list = [elem for elem in name_list if elem.startswith("NAME")]
 
-                if len(name_list) == 1:
-                    result_table.at[i, 'MAIN_ID'] = name_list[0].split(' ', 1)[1]
-                else:
-                    for name in name_list:
-                        if "Star" not in name and "star" not in name:
-                            result_table.at[i, 'MAIN_ID'] = name.split(' ', 1)[1]
-                            break
+                try:
+                    name_list = list(Simbad.query_objectids(result_table.at[i, 'MAIN_ID'])['ID'])
+                    name_list = [elem for elem in name_list if elem.startswith("NAME")]
+
+                    if len(name_list) == 1:
+                        result_table.at[i, 'MAIN_ID'] = name_list[0].split(' ', 1)[1]
+                    else:
+                        for name in name_list:
+                            if "Star" not in name and "star" not in name:
+                                result_table.at[i, 'MAIN_ID'] = name.split(' ', 1)[1]
+                                break
+                except TypeError:
+                    pass
 
         result_table.at[i, 'MAIN_ID'] = re.sub(r'\s+', ' ', result_table.at[i, 'MAIN_ID'])
         result_table.at[i, 'MAIN_ID'] = re.sub(r'^V\*\s*', '', result_table.at[i, 'MAIN_ID'])
@@ -144,7 +148,7 @@ def get_nearest_stars(plx=200, n=4):
     star_table = result_table[~binary_filter].reset_index(drop=True)
     companion_table = result_table[binary_filter].reset_index(drop=True)
 
-    star_table['MAIN_ID'] = star_table['MAIN_ID'].map(star_names).fillna(star_table['MAIN_ID'])
+    # star_table['MAIN_ID'] = star_table['MAIN_ID'].map(star_names).fillna(star_table['MAIN_ID'])
 
     print(f'Stars saved: {len(star_table)}')
 
