@@ -22,7 +22,7 @@ blank_label = {
                 'label': {
                     'text': '',
                     'visible': False,
-                    'fontSize': 20,
+                    'fontSize': 16,
                     'fontColor': '#000000',
                     'borderColor': '#000000',
                     'backgroundColor': '#FFFFFF',
@@ -36,7 +36,7 @@ blank_label = {
             }
 
 
-def make_hex_map(save, width, height, coords, labels, sp_types):
+def make_hex_map(save, width, height, hex_data):
 
     with open('template.map') as json_file:
         data = json.load(json_file)
@@ -60,7 +60,7 @@ def make_hex_map(save, width, height, coords, labels, sp_types):
         size = width * height
 
         while len(layers[0]['tiles']) != size:
-            add_tile(0, background_tile.format(n=np.random.randint(0, 80)))
+            add_tile(0, background_tile.format(n=np.random.randint(1, 80)))
 
         while len(layers[1]['tiles']) != size:
             add_tile(1, screen_tile)
@@ -71,16 +71,16 @@ def make_hex_map(save, width, height, coords, labels, sp_types):
             add_tile(4, None)
             infoLayer.append(dict(blank_label))
 
+        for d in hex_data:
+            change_tile(2, d[1], spectral_type_tile[d[2]])
+            change_label(d[1], d[0])
+
         data['width'], data['height'] = width, height
         data['infoLayer'] = infoLayer
         data['layers'] = layers
-
-        for i in range(len(coords)):
-            change_tile(2, coords[i], spectral_type_tile[sp_types[i]])
-            change_label(coords[i], labels[i])
 
         with open(save, 'w') as f:
             f.write(json.dumps(data, separators=(',', ':'), indent='\t'))
 
 
-make_hex_map('new.map', 6, 6, [], [], [])
+# make_hex_map('new.map', 6, 6, [])
