@@ -7,6 +7,12 @@ from tqdm import tqdm
 import numpy as np
 import re
 
+greek_letters = [
+    'alf', 'bet', 'gam', 'del', 'eps', 'zet', 'eta', 'tet', 'iot', 'kap', 'lam', 'mu.', 'nu.', 'ksi', 'omi', 'pi.',
+    'rho', 'sig', 'tau', 'ups', 'phi', 'chi', 'psi', 'w'
+]
+
+name_replace_exceptions = ['alf Cen A', 'alf Cen B']
 
 star_names = {
     'alf CMa': 'Sirius',
@@ -46,7 +52,6 @@ def compare_star_names(name1, name2):
 def get_nearest_stars(plx=200, n=4):
 
     #print(Simbad.list_votable_fields())
-
     Simbad.add_votable_fields('plx', 'otype', 'sptype', 'flux(V)')
 
     print('Getting SIMBAD data...')
@@ -66,11 +71,6 @@ def get_nearest_stars(plx=200, n=4):
 
         result_tables.append(Table(Simbad.query_criteria(query)).to_pandas())
 
-
-    # result_table = Table(Simbad.query_criteria(f'plx > {plx} & ' +
-    #                                            "maintypes = '*' & maintype != '**' & sptypes <= 'M9'"))
-    # result_table = result_table.to_pandas()
-
     result_table = pd.concat(result_tables, ignore_index=True)
     result_table.reset_index(inplace=True, drop=True)
 
@@ -80,19 +80,47 @@ def get_nearest_stars(plx=200, n=4):
     result_table['IS_COMPANION'] = False
     result_table['COMPANION_NAME'] = ''
 
-    for i in range(len(result_table)):
+    print('Processing SIMBAD data...')
+
+    result_table = result_table.sort_values(by=['MAIN_ID'], ascending=True)
+
+    name, previous_name, previous_index = '', '', None
+
+    for index, row in result_table.iterrows():
+        if previous_index is not None:
+            name = row['MAIN_ID']
+            if compare_star_names(name, previous_name):
+                result_table.loc[previous_index, 'HAS_COMPANION'] = True
+                result_table.loc[previous_index, 'COMPANION_NAME'] = name
+                result_table.loc[previous_index, 'MAIN_ID'] = re.sub(r'\s?[ABC]$', '', previous_name).strip()
+                result_table.loc[index, 'IS_COMPANION'] = True
+
+        previous_name, previous_index = name, index
+
+    for i in tqdm(range(len(result_table))):
 
         RA_sex, DEC_sex = result_table.at[i, 'RA'], result_table.at[i, 'DEC']
         c = SkyCoord(f'{RA_sex} {DEC_sex}', unit=(u.hourangle, u.deg))
         result_table.at[i, 'RA'], result_table.at[i, 'DEC'] = c.ra.degree, c.dec.degree
 
-        name = result_table.at[i, 'MAIN_ID']
+        result_table.at[i, 'MAIN_ID'] = re.sub(r'^\s*\*\s*', '', result_table.at[i, 'MAIN_ID'])
 
-        name_split = name.split(' ', 1)
+        name_split = result_table.at[i, 'MAIN_ID'].split(' ', 1)
         if name_split[0] == 'NAME':
             result_table.at[i, 'MAIN_ID'] = name_split[1]
+        else:
+            if name_split[0] in greek_letters and result_table.at[i, 'MAIN_ID'] not in name_replace_exceptions:
+                name_list = list(Simbad.query_objectids(result_table.at[i, 'MAIN_ID'])['ID'])
+                name_list = [elem for elem in name_list if elem.startswith("NAME")]
 
-        result_table.at[i, 'MAIN_ID'] = re.sub(r'^\s*\*\s*', '', result_table.at[i, 'MAIN_ID'])
+                if len(name_list) == 1:
+                    result_table.at[i, 'MAIN_ID'] = name_list[0].split(' ', 1)[1]
+                else:
+                    for name in name_list:
+                        if "Star" not in name and "star" not in name:
+                            result_table.at[i, 'MAIN_ID'] = name.split(' ', 1)[1]
+                            break
+
         result_table.at[i, 'MAIN_ID'] = re.sub(r'\s+', ' ', result_table.at[i, 'MAIN_ID'])
         result_table.at[i, 'MAIN_ID'] = re.sub(r'^V\*\s*', '', result_table.at[i, 'MAIN_ID'])
 
@@ -110,23 +138,6 @@ def get_nearest_stars(plx=200, n=4):
            'FLUX_V': -26.74, 'SP_TYPE': 'G2V', 'ABS_MAG_V': 4.83, 'DIST': 0.0}
 
     result_table = result_table._append(sol, ignore_index=True)
-
-    result_table = result_table.sort_values(by=['MAIN_ID'], ascending=True)
-
-    previous_name = ''
-    previous_index = None
-
-    for index, row in result_table.iterrows():
-        if previous_index is not None:
-            name = row['MAIN_ID']
-            if compare_star_names(name, previous_name):
-                result_table.loc[previous_index, 'HAS_COMPANION'] = True
-                result_table.loc[previous_index, 'COMPANION_NAME'] = name
-                result_table.loc[previous_index, 'MAIN_ID'] = re.sub(r'\s?[ABC]$', '', previous_name).strip()
-                result_table.loc[index, 'IS_COMPANION'] = True
-
-        previous_name = name
-        previous_index = index
 
     binary_filter = (result_table['IS_COMPANION'] == True)
 
@@ -148,4 +159,4 @@ def read_table(plx=50):
 
 
 if __name__ == '__main__':
-    get_nearest_stars(20, n=32)
+    get_nearest_stars(10, n=256)
