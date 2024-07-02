@@ -12,6 +12,15 @@ from graph_flattener import construct_graph
 from hexkit_interface import make_hex_map
 
 
+class cluster:
+
+    def __init__(self, name, type, table):
+
+        self.name = name
+        self.type = type
+        self.table = table
+
+
 def find_nearest_point(points, x, y):
     distances = np.sum((points - np.array([x, y])) ** 2, axis=1)
     nearest_index = np.argmin(distances)
@@ -108,6 +117,7 @@ def make_map(star_table, central_star=None, max_distance=None, ax=None, snap_to_
 
     star_points = np.array([star_table['X'], star_table['Y'], star_table['Z']]).T
     names = list(star_table['MAIN_ID'])
+    names_unmodified = list(star_table['MAIN_ID'])
     if division_name is not None:
         clusters = list(star_table[division_name])
     else:
@@ -168,8 +178,11 @@ def make_map(star_table, central_star=None, max_distance=None, ax=None, snap_to_
             number_in_hex[i] = stars_in_hex[hex_i]
             stars_in_hex[hex_i] += 1
 
-            row = star_table[star_table['MAIN_ID'] == nodes[i].name]
-            sp_type = first_capital_letter(list(row['SP_TYPE'])[0])
+            row = star_table[star_table['MAIN_ID'] == names_unmodified[i]]
+            if len(row) > 0:
+                sp_type = first_capital_letter(list(row['SP_TYPE'])[0])
+            else:
+                sp_type = 'M'
 
             hex_map_data.append((nodes[i].name, hex_i, sp_type))
 
@@ -200,11 +213,9 @@ def make_map(star_table, central_star=None, max_distance=None, ax=None, snap_to_
     x_pad = 0.5 * (y_size - x_size) if y_size > x_size else 0
     y_pad = 0.5 * (x_size - y_size) if x_size > y_size else 0
 
-    # ax.set_xlim([min(xs) - padding - x_pad, max(xs) + padding + x_pad])
-    # ax.set_ylim([min(ys) - padding - y_pad, max(ys) + padding + y_pad])
-    # plt.subplots_adjust(left=0, right=1, top=1, bottom=0, hspace=0, wspace=0)
-
-    # print(hex_map_data)
+    ax.set_xlim([min(xs) - padding - x_pad, max(xs) + padding + x_pad])
+    ax.set_ylim([min(ys) - padding - y_pad, max(ys) + padding + y_pad])
+    plt.subplots_adjust(left=0, right=1, top=1, bottom=0, hspace=0, wspace=0)
 
     if save is None:
         plt.show()
@@ -276,7 +287,7 @@ def get_nearest_stars(star_name):
             break
 
 
-def make_sectors(cluster_size=8, cutoff_distance=10, make_web_version=False):
+def make_sectors(cluster_size=8, cutoff_distance=10, make_web_version=False, make_hexkit=False):
     global table
 
     table = table[table['DIST'] < cutoff_distance]
@@ -350,8 +361,19 @@ def make_sectors(cluster_size=8, cutoff_distance=10, make_web_version=False):
             cluster_links.append(sectors)
 
             if len(map_table) > 0:
-                cluster_labels, pixel = make_map(map_table, save=f'atlas/images/{division_name} {cluster_name}.png', cluster_name=cluster_name,
-                         division_name=division_name)
+                if make_hexkit:
+                    make_map(map_table, save=f'atlas/hexkit/{division_name} {cluster_name}.map',
+                                                     cluster_name=cluster_name,
+                                                     division_name=division_name, make_hexkit_map=True)
+
+                    cluster_labels, pixel = make_map(map_table, save=f'atlas/hexkit/{division_name} {cluster_name}.png',
+                                                     cluster_name=cluster_name,
+                                                     division_name=division_name)
+
+                else:
+                    cluster_labels, pixel = make_map(map_table, save=f'atlas/images/{division_name} {cluster_name}.png',
+                                                     cluster_name=cluster_name,
+                                                     division_name=division_name)
             else:
                 pixel = []
 
@@ -376,12 +398,12 @@ def make_sectors(cluster_size=8, cutoff_distance=10, make_web_version=False):
         return cluster_cluster, cluster_pixels
 
     sectors_table, sector_names, sector_centers, sector_sizes = cluster(table, 'SECTOR')
-    region_table, region_names, region_centers, region_sizes = cluster(sectors_table, 'REGION')
-    zone_table, zone_names, zone_centers, zone_sizes = cluster(region_table, 'ZONE')
+    # region_table, region_names, region_centers, region_sizes = cluster(sectors_table, 'REGION')
+    # zone_table, zone_names, zone_centers, zone_sizes = cluster(region_table, 'ZONE')
 
     sector_sector, sector_pixels = make_cluster_map(table, 'SECTOR', sector_names, sector_centers, sector_sizes)
-    region_region, region_pixels = make_cluster_map(sectors_table, 'REGION', region_names, region_centers, region_sizes)
-    zone_zone, zone_pixels = make_cluster_map(region_table, 'ZONE', zone_names, zone_centers, zone_sizes)
+    # region_region, region_pixels = make_cluster_map(sectors_table, 'REGION', region_names, region_centers, region_sizes)
+    # zone_zone, zone_pixels = make_cluster_map(region_table, 'ZONE', zone_names, zone_centers, zone_sizes)
 
     print('DONE')
 
@@ -417,12 +439,11 @@ def make_sectors(cluster_size=8, cutoff_distance=10, make_web_version=False):
         for i in range(len(sector_names)):
             make_html_page('SECTOR', sector_names[i], sector_pixels[i], sector_sector[i])
 
-        for i in range(len(region_names)):
-            make_html_page('REGION', region_names[i], region_pixels[i], region_region[i])
+        # for i in range(len(region_names)):
+        #     make_html_page('REGION', region_names[i], region_pixels[i], region_region[i])
+        #
+        # for i in range(len(zone_names)):
+        #     make_html_page('ZONE', zone_names[i], zone_pixels[i], zone_zone[i])
 
-        for i in range(len(zone_names)):
-            make_html_page('ZONE', zone_names[i], zone_pixels[i], zone_zone[i])
 
-
-table = pd.DataFrame(table[table['DIST'] < 3.5])
-make_map(table, central_star='Sol', save='test_map.png')
+make_sectors(cluster_size=5, cutoff_distance=5, make_hexkit=True)
