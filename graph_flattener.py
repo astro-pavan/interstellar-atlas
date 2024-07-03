@@ -1,8 +1,7 @@
 import numpy as np
 from numba import jit
 from scipy.spatial import KDTree
-from scipy.optimize import minimize, basinhopping, dual_annealing
-from tqdm import tqdm
+from scipy.optimize import minimize
 
 import matplotlib.pyplot as plt
 import networkx as nx
@@ -44,23 +43,13 @@ class graph_node:
             self.neighbour_count += 1
             node.neighbour_count += 1
 
-            if n is not None:
+            if n is not None and self.neighbour_count > 7:
 
-                if self.neighbour_count > 7:
+                def objective_function(x):
+                    self.map_position = x
+                    return self.map_error(triple=False)
 
-                    def objective_function(x):
-                        self.map_position = x
-                        return self.map_error(triple=False)
-
-                    def objective_function_v2(x):
-                        self.set_neighbour_map_positions(x)
-                        return self.map_error(triple=False)
-
-                    #basinhopping(objective_function, self.map_position)
-                    #dual_annealing(objective_function, ((-20, 20), (-20, 20)))
-                    #print('Minimizing...')
-                    minimize(objective_function, self.map_position)
-                    #minimize(objective_function_v2, self.get_neighbour_map_positions())
+                minimize(objective_function, self.map_position)
 
     def map_error(self, triple=True):
 
