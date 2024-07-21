@@ -14,44 +14,18 @@ greek_letters = [
 
 name_replace_exceptions = ['alf Cen A', 'alf Cen B']
 
-star_names = {
-    'alf CMa': 'Sirius',
-    'alf CMi': 'Procyon',
-    'eta Cas': 'Achird',
-    'sig Dra': 'Alsafi',
-    'alf Aql': 'Altair',
-    'alf Lyr': 'Vega',
-    'alf PsA': 'Fomalhaut',
-    'tet Cen': 'Menkent',
-    'alf Tri': 'Mothallah',
-    'eta Boo': 'Izar',
-    'bet Leo': 'Denebola',
-    'alf Boo': 'Arcturus',
-    'bet Cas': 'Caph',
-    'bet Vir': 'Zavijava',
-    'ksi Gem': 'Alzirr',
-    'iot UMa A': 'Talitha',
-    'gam Vir B': 'Porrima',
-    'alf Cep': 'Alderamin',
-    'alf Aur': 'Capella'
-}
-
 
 def compare_star_names(name1, name2):
 
     def remove_suffix(name):
         return re.sub(r'\s?[ABC]$', '', name).strip()
 
-    base_name1 = remove_suffix(name1)
-    base_name2 = remove_suffix(name2)
-
-    # Compare the base names
-    return base_name1 == base_name2
+    return remove_suffix(name1) == remove_suffix(name2)
 
 
 def get_nearest_stars(plx=200, n=4):
 
-    #print(Simbad.list_votable_fields())
+    # print(Simbad.list_votable_fields())
     Simbad.add_votable_fields('plx', 'otype', 'sptype', 'flux(V)')
 
     print('Getting SIMBAD data...')
@@ -125,11 +99,14 @@ def get_nearest_stars(plx=200, n=4):
                 except TypeError:
                     pass
 
+        # Catalogue priority names: NAME, V*, Wolf, Ross, LHS, LFT, GJ, GI, G
+        # Exclude: **
+
         result_table.at[i, 'MAIN_ID'] = re.sub(r'\s+', ' ', result_table.at[i, 'MAIN_ID'])
         result_table.at[i, 'MAIN_ID'] = re.sub(r'^V\*\s*', '', result_table.at[i, 'MAIN_ID'])
 
-        if result_table.at[i, 'MAIN_ID'] == 'HD 1326B':
-            result_table.at[i, 'MAIN_ID'] = 'HD 1326 B'
+        if result_table.at[i, 'MAIN_ID'] == 'Proxima Centauri':
+            result_table.at[i, 'MAIN_ID'] = 'Prox Cen'
 
     result_table['DIST'] = 1 / (result_table['PLX_VALUE'] / 1000)
     result_table['ABS_MAG_V'] = result_table['FLUX_V'] + 5 * (np.log10(result_table['PLX_VALUE'] / 1000) + 1)
