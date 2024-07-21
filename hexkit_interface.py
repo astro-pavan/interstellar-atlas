@@ -16,19 +16,38 @@ spectral_type_tile = {
 }
 
 background_tile = 'Spaceland.Space:/A. Stillness Of Space/hk_empty-space_{n:03d}.png'
-screen_tile = 'Spaceland.Space:/E. Screen/01 Blue/bluscrn-003.png'
+blue_screen_tile = 'Spaceland.Space:/E. Screen/01 Blue/bluscrn-002.png'
+red_screen_tile = 'Spaceland.Space:/E. Screen/01 Blue/bluscrn-005.png'
+
 
 blank_label = {
                 'label': {
                     'text': '',
                     'visible': False,
-                    'fontSize': 16,
+                    'fontSize': 14,
                     'fontColor': '#000000',
                     'borderColor': '#000000',
                     'backgroundColor': '#FFFFFF',
                     'horizontalOffset': 0,
                     'verticalOffset': 0,
                     'opacity': 1
+                },
+                'data': '',
+                'selected': False,
+                'custom': False
+            }
+
+title_label = {
+                'label': {
+                    'text': '',
+                    'visible': False,
+                    'fontSize': 30,
+                    'fontColor': '#000000',
+                    'borderColor': '#000000',
+                    'backgroundColor': '#FFFFFF',
+                    'horizontalOffset': 100,
+                    'verticalOffset': -55,
+                    'opacity': 0
                 },
                 'data': '',
                 'selected': False,
@@ -51,8 +70,8 @@ def make_hex_map(save, width, height, hex_data):
             tile = {'source': tile_name, 'rotation': 0, 'mirror': False} if tile_name is not None else None
             layers[layer_id]['tiles'].append(tile)
 
-        def change_label(coord, text):
-            label = copy.deepcopy(blank_label)
+        def change_label(coord, text, title=False):
+            label = copy.deepcopy(title_label if title else blank_label)
             label['label']['text'] = text
             label['label']['visible'] = True
             infoLayer[coord] = label
@@ -63,7 +82,7 @@ def make_hex_map(save, width, height, hex_data):
             add_tile(0, background_tile.format(n=np.random.randint(1, 80)))
 
         while len(layers[1]['tiles']) != size:
-            add_tile(1, screen_tile)
+            add_tile(1, blue_screen_tile)
 
         while len(layers[2]['tiles']) != size:
             add_tile(2, None)
@@ -71,7 +90,13 @@ def make_hex_map(save, width, height, hex_data):
             add_tile(4, None)
             infoLayer.append(dict(blank_label))
 
+        change_tile(1, 0, blue_screen_tile)
+
         for d in hex_data:
+
+            if d[0].endswith(')'):
+                change_tile(1, d[1], red_screen_tile)
+
             change_tile(2, d[1], spectral_type_tile[d[2]])
             change_label(d[1], d[0])
 
