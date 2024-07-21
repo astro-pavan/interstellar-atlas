@@ -120,7 +120,7 @@ def hex_grid_dimensions(xs, ys, hex_size):
     return int(((max_x - min_x) * 1.5) / hex_size), int(((max_y - min_y) * 1.5) / hex_size)
 
 
-table = pd.read_csv(f'simbad/Stars_plx_20.csv')
+table = pd.read_csv(f'simbad/Stars_plx_10.csv')
 
 plt.style.use('dark_background')
 sc = None
@@ -213,7 +213,7 @@ def make_matplotlib_map(star_table, title=None, save=None, hex_size=1, ax=None, 
 
     sc = ax.scatter(star_table['X_MAP'], star_table['Y_MAP'], c='white', s=1)
     for i, row in star_table.iterrows():
-        ax.text(row['X_MAP'], row['Y_MAP'], row['LABEL'],
+        ax.text(row['X_MAP'], row['Y_MAP'], replace_greek_abbreviation(row['LABEL']),
                 color='white', fontsize='xx-small', rotation=30)
 
     padding = 1
@@ -354,7 +354,7 @@ def make_sectors(cluster_size=8, cutoff_distance=10, make_hexkit=False):
 
         nx.draw(G, nx.spring_layout(G), with_labels=True, node_size=200, node_color='blue', font_size=7,
                 edge_color='gray', font_color='white')
-        plt.savefig(f'atlas/images/{cluster_list[0].type} LINKS.png', bbox_inches='tight')
+        plt.savefig(f'atlas/{cluster_list[0].type} LINKS.png', bbox_inches='tight')
         plt.close()
 
     sector_list = clustering(table, 'SECTOR')
@@ -370,4 +370,12 @@ def make_sectors(cluster_size=8, cutoff_distance=10, make_hexkit=False):
     print('DONE')
 
 
-make_sectors(cluster_size=5, cutoff_distance=5, make_hexkit=True)
+make_sectors(cluster_size=7, cutoff_distance=7, make_hexkit=True)
+
+# TO DO
+# hexkit handle multiple stars per hex
+# sector numbering scheme
+# sector map title
+# add gaia stars
+# name shortening
+# combine hexmaps
