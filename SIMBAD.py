@@ -15,11 +15,11 @@ greek_letters = [
 name_replace_exceptions = ['alf Cen A', 'alf Cen B']
 
 
+def remove_suffix(name):
+    return re.sub(r'\s?[ABC]$', '', name).strip()
+
+
 def compare_star_names(name1, name2):
-
-    def remove_suffix(name):
-        return re.sub(r'\s?[ABC]$', '', name).strip()
-
     return remove_suffix(name1) == remove_suffix(name2)
 
 
@@ -36,7 +36,7 @@ def get_nearest_stars(plx=200, n=4):
     for i in tqdm(range(n)):
         ra_min, ra_max = ra[i], ra[i + 1]
         query = f'plx > {plx} & ' +\
-                "maintypes = '*' & maintype != '**' & sptypes <= 'M9' & "
+                "maintypes = '*' & maintype != '**' & maintypes != 'BD*' & "
 
         if ra_max == 360:
             query += f'ra >= {ra_min}'
@@ -83,19 +83,42 @@ def get_nearest_stars(plx=200, n=4):
         if name_split[0] == 'NAME':
             result_table.at[i, 'MAIN_ID'] = name_split[1]
         else:
-            if name_split[0] in greek_letters and result_table.at[i, 'MAIN_ID'] not in name_replace_exceptions:
+            # name_split[0] in greek_letters and
+            if result_table.at[i, 'MAIN_ID'] not in name_replace_exceptions:
 
                 try:
-                    name_list = list(Simbad.query_objectids(result_table.at[i, 'MAIN_ID'])['ID'])
-                    name_list = [elem for elem in name_list if elem.startswith("NAME")]
+                    id_list = list(Simbad.query_objectids(result_table.at[i, 'MAIN_ID'])['ID'])
+                    names = [elem for elem in id_list if elem.startswith("NAME")]
+                    V = [elem for elem in id_list if elem.startswith("V*")]
+                    wolf = [elem for elem in id_list if elem.startswith("Wolf")]
+                    ross = [elem for elem in id_list if elem.startswith("Ross")]
+                    LAWD = [elem for elem in id_list if elem.startswith("LAWD")]
+                    GJ = [elem for elem in id_list if elem.startswith("GJ")]
+                    MUCD = [elem for elem in id_list if elem.startswith("2MUCD")]
 
-                    if len(name_list) == 1:
-                        result_table.at[i, 'MAIN_ID'] = name_list[0].split(' ', 1)[1]
-                    else:
-                        for name in name_list:
-                            if "Star" not in name and "star" not in name:
+                    if len(names) == 1:
+                        result_table.at[i, 'MAIN_ID'] = names[0].split(' ', 1)[1]
+                    elif len(names) > 1:
+                        #result_table.at[i, 'MAIN_ID'] = names[0].split(' ', 1)[1]
+                        for name in names:
+                            if "'s " in name and ('star' in name or 'Star' in name):
                                 result_table.at[i, 'MAIN_ID'] = name.split(' ', 1)[1]
                                 break
+                            if 'star' not in name or 'Star' not in name:
+                                result_table.at[i, 'MAIN_ID'] = name.split(' ', 1)[1]
+                    elif len(wolf) == 1:
+                        result_table.at[i, 'MAIN_ID'] = wolf[0]
+                    elif len(ross) == 1:
+                        result_table.at[i, 'MAIN_ID'] = ross[0]
+                    elif len(V) == 1:
+                        result_table.at[i, 'MAIN_ID'] = V[0]
+                    elif len(LAWD) == 1:
+                        result_table.at[i, 'MAIN_ID'] = LAWD[0]
+                    elif len(GJ) == 1:
+                        result_table.at[i, 'MAIN_ID'] = 'Gliese ' + GJ[0].split(' ', 1)[1]
+                    elif len(MUCD) == 1:
+                        result_table.at[i, 'MAIN_ID'] = MUCD[0]
+
                 except TypeError:
                     pass
 
@@ -104,6 +127,7 @@ def get_nearest_stars(plx=200, n=4):
 
         result_table.at[i, 'MAIN_ID'] = re.sub(r'\s+', ' ', result_table.at[i, 'MAIN_ID'])
         result_table.at[i, 'MAIN_ID'] = re.sub(r'^V\*\s*', '', result_table.at[i, 'MAIN_ID'])
+        result_table.at[i, 'MAIN_ID'] = remove_suffix(result_table.at[i, 'MAIN_ID'])
 
         if result_table.at[i, 'MAIN_ID'] == 'Proxima Centauri':
             result_table.at[i, 'MAIN_ID'] = 'Prox Cen'
@@ -125,6 +149,8 @@ def get_nearest_stars(plx=200, n=4):
     star_table = result_table[~binary_filter].reset_index(drop=True)
     companion_table = result_table[binary_filter].reset_index(drop=True)
 
+    star_table = star_table.drop_duplicates(subset='MAIN_ID', keep='first')
+
     # star_table['MAIN_ID'] = star_table['MAIN_ID'].map(star_names).fillna(star_table['MAIN_ID'])
 
     print(f'Stars saved: {len(star_table)}')
@@ -140,4 +166,4 @@ def read_table(plx=50):
 
 
 if __name__ == '__main__':
-    get_nearest_stars(10, n=256)
+    get_nearest_stars(40, n=5)

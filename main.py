@@ -6,6 +6,7 @@ import re
 from sklearn.cluster import KMeans
 import networkx as nx
 from tqdm import tqdm
+from scipy.optimize import direct
 
 # rcParams['font.family'] = 'monospace'
 
@@ -13,9 +14,14 @@ from graph_flattener import construct_graph
 from hexkit_interface import make_hex_map
 
 
+sector_groups = {}
+
+
 class cluster:
 
     def __init__(self, cluster_id, cluster_table, cluster_type):
+
+        coord_columns = ['X', 'Y', 'Z']
 
         self.id = cluster_id
         self.table = cluster_table
@@ -24,14 +30,31 @@ class cluster:
         i_main = self.table['ABS_MAG_V'].idxmin()
         if np.isnan(i_main):
             i_main = self.table['PLX_VALUE'].idxmax()
-        self.name = self.table.loc[i_main, 'MAIN_ID']
 
-        coord_columns = ['X', 'Y', 'Z']
         self.center = self.table[coord_columns].mean()
+
+        octant_binary = np.heaviside(self.center, 0)
+        dist_code = np.ceil(np.log10(np.sqrt((self.center ** 2).sum())))
+        dist_code = int(dist_code)
+        oct_code = int(octant_binary[0] + octant_binary[1] * 2 + octant_binary[2] * 4) if dist_code > 0 else 0
+
+        self.name = self.table.loc[i_main, 'MAIN_ID']
+        self.main_star = self.table.loc[i_main, 'MAIN_ID']
+
+        pos_code = oct_code * 10 + dist_code
+        if pos_code in sector_groups.keys():
+            sector_groups[pos_code] += 1
+        else:
+            sector_groups[pos_code] = 0
+
+        self.name = f'{pos_code:02d}-{sector_groups[pos_code]}'
+
         distances = np.sqrt(((cluster_table[coord_columns] - self.center) ** 2).sum(axis=1))
         self.size = distances.max()
 
-        self.links = []
+        self.map_table = None
+
+        self.links = None
 
     def make_map_table(self, star_table):
 
@@ -55,8 +78,23 @@ class cluster:
                 break
 
         self.links = links
+        #dist = np.sqrt(((map_table[coord_columns] - self.center) ** 2).sum(axis=1))
 
-        return map_table
+        self.map_table = pd.DataFrame(map_table)
+
+        for link_id in self.links:
+            if link_id != self.id:
+                link_table = map_table[map_table[f'{self.type}_ID'] == link_id]
+                while len(link_table) > 1:
+
+                    dist = np.sqrt(((link_table[coord_columns] - self.center) ** 2).sum(axis=1))
+                    i_max = dist.idxmax()
+                    map_table.drop(i_max, inplace=True, axis=0)
+                    #dist.drop(i_max, inplace=True, axis=0)
+
+                    link_table = map_table[map_table[f'{self.type}_ID'] == link_id]
+
+        self.map_table = map_table
 
 
 def find_nearest_point(points, p):
@@ -114,13 +152,16 @@ def first_capital_letter(s):
     return 'M'
 
 
-def hex_grid_dimensions(xs, ys, hex_size):
+def hex_grid_dimensions(xs, ys, hex_size, extra_hexs=0):
     min_x, max_x = xs.min(), xs.max()
     min_y, max_y = ys.min(), ys.max()
-    return int(((max_x - min_x) * 1.5) / hex_size), int(((max_y - min_y) * 1.5) / hex_size)
+    hex_x, hex_y = ((max_x - min_x) * 1.5) / hex_size, ((max_y - min_y) * 1.5) / hex_size
+    dx, dy = (0.5 * (max_x + min_x)) / hex_size, (0.5 * (max_y + min_y)) / hex_size
+    # int(((max_x - min_x) * 1.5) / hex_size) + extra_hexs, int(((max_y - min_y) * 1.5) / hex_size) + extra_hexs
+    return int(hex_x) + extra_hexs, int(hex_y) + extra_hexs, dx, dy
 
 
-table = pd.read_csv(f'simbad/Stars_plx_10.csv')
+table = pd.read_csv(f'simbad/Stars_plx_40.csv', low_memory=False)
 
 plt.style.use('dark_background')
 sc = None
@@ -156,22 +197,53 @@ def generate_map_data(star_table, hex_size=1, division=None, snap_to_hex=True, c
 
     if cluster_name is not None:
         for i, row in star_table.iterrows():
-            star_table.loc[i, 'LABEL'] = row['MAIN_ID'] +\
-                                         (f" ({row[division]})" if row[division] != cluster_name else '')
+            div_name = row[division]
+            label = row['MAIN_ID'] + (f" ({div_name})" if div_name != cluster_name else '')
+            star_table.loc[i, 'LABEL'] = label
     else:
         star_table['LABEL'] = star_table['MAIN_ID']
 
     for i, row in star_table.iterrows():
-        star_table.loc[i, 'COLOUR'] = first_capital_letter(list(row['SP_TYPE'])[0])
+        try:
+            star_table.loc[i, 'COLOUR'] = first_capital_letter(list(row['SP_TYPE'])[0])
+        except TypeError:
+            star_table.loc[i, 'COLOUR'] = 'M'
 
     if snap_to_hex:
 
         star_table['HEX'], star_table['NUM_IN_HEX'] = 0, 0
-        hex_x, hex_y = hex_grid_dimensions(star_table['X_MAP'], star_table['Y_MAP'], hex_size)
+        star_table['X_MAP_HEX'], star_table['Y_MAP_HEX'] = 0, 0
+        # star_table['X_DISP'], star_table['Y_DISP'] = 0, 0
+        hex_x, hex_y, dx, dy = hex_grid_dimensions(star_table['X_MAP'], star_table['Y_MAP'], hex_size)
 
         hex_centers, _ = create_hex_grid(nx=hex_x, ny=hex_y, min_diam=hex_size, do_plot=False, align_to_origin=True)
-        hex_centers = hex_centers[::-1]
+        hex_centers[:, 0] += dx
+        hex_centers[:, 1] += dy
         stars_in_hex = np.zeros(len(hex_centers))
+
+        def number_of_overfilled_hexs(disp):
+            n_in_hex = np.zeros(len(hex_centers))
+            count = 0
+            for j, r in star_table.iterrows():
+                pos = np.array([r['X_MAP'] + disp[2 * count], r['Y_MAP'] + disp[2 * count + 1]])
+                n_in_hex[find_nearest_point(hex_centers, pos)] += 1
+                count += 1
+            n_in_hex = np.where(n_in_hex > 1, n_in_hex - 1, 0)
+            return n_in_hex.sum()
+
+        bounds, max_disp = [], 0.4
+        for i in range(len(star_table) * 2):
+            bounds.append((-max_disp, max_disp))
+
+        res = direct(number_of_overfilled_hexs, bounds)
+        disp = res.x
+        initial_overfilled, final_overfilled = number_of_overfilled_hexs(np.full(len(star_table) * 2, 0)), res.fun
+
+        count = 0
+        for i, row in star_table.iterrows():
+            star_table.at[i, 'X_MAP'] = row['X_MAP'] + disp[2 * count]
+            star_table.at[i, 'Y_MAP'] = row['Y_MAP'] + disp[2 * count + 1]
+            count += 1
 
         for i, row in star_table.iterrows():
             hx = find_nearest_point(hex_centers, np.array([row['X_MAP'], row['Y_MAP']]))
@@ -182,17 +254,18 @@ def generate_map_data(star_table, hex_size=1, division=None, snap_to_hex=True, c
         for i, row in star_table.iterrows():
             hx = row['HEX']
             l, n, total = 0.4 * hex_size, row['NUM_IN_HEX'], stars_in_hex[hx]
-            y_disp = ((n / (total - 1)) * -l) + (l / 2) if total > 1 else 0
-            star_table.loc[i, 'X_MAP'] = hex_centers[hx, 0]
-            star_table.loc[i, 'Y_MAP'] = hex_centers[hx, 1] + y_disp
+            y_disp = ((n / (total - 1)) * -l) + l if total > 1 else 0
+            star_table.loc[i, 'X_MAP_HEX'] = hex_centers[hx, 0]
+            star_table.loc[i, 'Y_MAP_HEX'] = hex_centers[hx, 1] + y_disp
 
-        return star_table, hex_x, hex_y
+        return star_table, hex_x, hex_y, dx, dy
 
-    return star_table
+    else:
+        return star_table
 
 
 def make_matplotlib_map(star_table, title=None, save=None, hex_size=1, ax=None, division=None, return_pixels=False,
-                        hex_x=0, hex_y=0):
+                        hex_x=0, hex_y=0, dx=0, dy=0):
     global sc, label
 
     if ax is None:
@@ -207,13 +280,19 @@ def make_matplotlib_map(star_table, title=None, save=None, hex_size=1, ax=None, 
     if hex_size is not None and hex_x > 0 and hex_y > 0:
         hex_centers, _ = create_hex_grid(nx=hex_x, ny=hex_y, min_diam=hex_size, do_plot=True, align_to_origin=True,
                                          edge_color=[1, 1, 1], h_ax=ax)
+        # hex_centers, _ = create_hex_grid(nx=hex_x, ny=hex_y, min_diam=hex_size, do_plot=False, align_to_origin=True,
+        #                                  edge_color=[1, 1, 1])
+
+    # hex_centers[:, 0] += dx
+    # hex_centers[:, 1] += dy
+    ax.scatter(hex_centers[0, 0], hex_centers[0, 1], color='red')
 
     if title is not None:
         ax.set_title(title)
 
-    sc = ax.scatter(star_table['X_MAP'], star_table['Y_MAP'], c='white', s=1)
+    sc = ax.scatter(star_table['X_MAP'] - dx, star_table['Y_MAP'] - dy, c='white', s=1)
     for i, row in star_table.iterrows():
-        ax.text(row['X_MAP'], row['Y_MAP'], replace_greek_abbreviation(row['LABEL']),
+        ax.text(row['X_MAP'] - dx, row['Y_MAP'] - dy, replace_greek_abbreviation(row['LABEL']),
                 color='white', fontsize='xx-small', rotation=30)
 
     padding = 1
@@ -222,9 +301,11 @@ def make_matplotlib_map(star_table, title=None, save=None, hex_size=1, ax=None, 
     x_pad = 0.5 * (y_size - x_size) if y_size > x_size else 0
     y_pad = 0.5 * (x_size - y_size) if x_size > y_size else 0
 
-    ax.set_xlim([star_table['X_MAP'].min() - padding - x_pad, star_table['X_MAP'].max() + padding + x_pad])
-    ax.set_ylim([star_table['Y_MAP'].min() - padding - y_pad, star_table['Y_MAP'].max() + padding + y_pad])
+    #ax.set_xlim([star_table['X_MAP'].min() - padding - x_pad, star_table['X_MAP'].max() + padding + x_pad])
+    #ax.set_ylim([star_table['Y_MAP'].min() - padding - y_pad, star_table['Y_MAP'].max() + padding + y_pad])
     plt.subplots_adjust(left=0, right=1, top=1, bottom=0, hspace=0, wspace=0)
+
+    plt.gca().invert_yaxis()
 
     if save is None:
         plt.show()
@@ -242,30 +323,23 @@ def make_matplotlib_map(star_table, title=None, save=None, hex_size=1, ax=None, 
     plt.close()
 
 
-def make_hexkit_map(star_table, save, hex_x, hex_y, hex_size=1):
+def make_hexkit_map(star_table, save, hex_x, hex_y, title=''):
 
     hex_map_data = []
 
     for i, row in star_table.iterrows():
         hex_map_data.append((row['LABEL'], row['HEX'], row['COLOUR']))
 
+    if title != '':
+
+        hexes = np.array(star_table['HEX'])
+
+        if 0 not in hexes and 1 not in hexes:
+            hex_map_data.append((title, 0, 'TITLE'))
+        else:
+            hex_map_data.append((title, hex_x * hex_y - 2, 'TITLE'))
+
     make_hex_map(save, hex_x, hex_y, hex_map_data)
-
-
-# def interactive_map(central_star='Sol', max_distance=3):
-#     fig, ax = plt.subplots()
-#
-#     def on_click(event):
-#         if event.inaxes:
-#             cont, ind = sc.contains(event)
-#             if cont:
-#                 index = ind['ind'][0]
-#                 generate_map_data(table, central_star=label[index], max_distance=max_distance)
-#                 make_map(table, ax=ax, central_star=label[index], max_distance=max_distance)
-#
-#     cid = plt.gcf().canvas.mpl_connect('button_press_event', on_click)
-#
-#     make_map(table, ax=ax, central_star=central_star, max_distance=max_distance)
 
 
 def get_nearest_stars(star_name):
@@ -294,27 +368,38 @@ def get_nearest_stars(star_name):
             break
 
 
-def make_sectors(cluster_size=8, cutoff_distance=10, make_hexkit=False):
+def make_sectors(cluster_size=8, cutoff_distance=10, make_hexkit=False, hex_size=1, force_sol=True):
     global table
 
     table = table[table['DIST'] < cutoff_distance]
     table.reset_index(drop=True, inplace=True)
 
+    coord_columns = ['X', 'Y', 'Z']
+
+    print(f'Making sectors with {len(table)} stars...')
+
     def clustering(star_table, division_name):
 
         star_table[division_name] = '-'
         star_table[f'{division_name}_ID'] = -1
-        star_points = np.array([star_table['X'], star_table['Y'], star_table['Z']]).T
+        cluster_list, cluster_names, star_table[division_name] = [], [], ''
 
-        n = int(len(star_table) / cluster_size)
+        if force_sol:
+            star_table[f'{division_name}_ID'] = 0
+            sol_table = star_table[star_table['DIST'] <= 3.25]
+            star_table = star_table[star_table['DIST'] > 3.25]
+            star_table.reset_index(inplace=True, drop=True)
 
+        n = int(len(star_table) / cluster_size) - (1 if force_sol else 0)
         kmeans = KMeans(n_clusters=n)
-        kmeans.fit(star_points)
+        kmeans.fit(np.array([star_table['X'], star_table['Y'], star_table['Z']]).T)
 
         for index, row in star_table.iterrows():
-            star_table.loc[index, f'{division_name}_ID'] = kmeans.labels_[index]
+            star_table.loc[index, f'{division_name}_ID'] = kmeans.labels_[index] + (1 if force_sol else 0)
 
-        cluster_list, cluster_names, star_table[division_name]  = [], [], ''
+        if force_sol:
+            star_table = pd.concat([sol_table, star_table], ignore_index=True)
+            n += 1
 
         for cluster_id in range(n):
             c = cluster(cluster_id, star_table[star_table[f'{division_name}_ID'] == cluster_id], division_name)
@@ -322,21 +407,53 @@ def make_sectors(cluster_size=8, cutoff_distance=10, make_hexkit=False):
             cluster_names.append(c.name)
 
         for index, row in star_table.iterrows():
-            star_table.loc[index, division_name] = cluster_names[star_table.loc[index, f'{division_name}_ID']]
+            cluster_id = star_table.loc[index, f'{division_name}_ID']
+            star_table.loc[index, division_name] = cluster_names[cluster_id]
 
-        return cluster_list
+        return cluster_list, star_table
 
-    def make_cluster_map(cluster_list, star_table):
+    def make_cluster_map(cluster_list, star_table, hex_size=1):
+
+        for c in tqdm(cluster_list):
+            c.make_map_table(star_table)
+
+        for c in cluster_list:
+
+            for link_id in c.links:
+                if link_id != c.id:
+                    cluster_list[link_id].links.add(c.id)
+
+        for c1 in cluster_list:
+            for link_id in c1.links:
+                if link_id != c1.id:
+                    t = c1.map_table[c1.map_table[f'{c1.type}_ID'] == link_id]
+                    tl = len(t)
+                    if tl == 0:
+                        c2 = cluster_list[link_id]
+                        t2 = c2.map_table[c2.map_table[f'{c2.type}_ID'] != c1.id]
+
+                        dist = np.sqrt(((t2[coord_columns] - c1.center) ** 2).sum(axis=1))
+                        append_row = c2.map_table[c2.map_table.index == dist.idxmin()]
+                        c1.map_table = pd.concat([c1.map_table, append_row])
+
+        map_tables, widths, heights = [], [], []
 
         for c in tqdm(cluster_list):
 
-            map_table = c.make_map_table(star_table)
+            if len(c.map_table) > 0:
+                map_table, hex_x, hex_y, dx, dy = generate_map_data(c.map_table, hex_size=hex_size,
+                                                                    division=c.type, cluster_name=c.name)
+                widths.append(hex_x)
+                heights.append(hex_y)
+                map_tables.append(map_table)
 
-            if len(map_table) > 0:
-                map_table, hex_x, hex_y = generate_map_data(map_table, division=c.type, cluster_name=c.name)
                 if make_hexkit:
-                    make_hexkit_map(map_table, f'atlas/hexkit/{c.type} {c.name}.map', hex_x, hex_y)
-                make_matplotlib_map(map_table, save=f'atlas/hexkit/{c.type} {c.name}.png', hex_x=hex_x, hex_y=hex_y)
+                    make_hexkit_map(map_table, f'atlas/hexkit/{c.type} {c.name}.map', hex_x, hex_y,
+                                    title=f'{c.type} {c.name}')
+                make_matplotlib_map(map_table, save=f'atlas/hexkit/{c.type} {c.name}.png',
+                                    hex_x=hex_x, hex_y=hex_y, hex_size=hex_size, dx=dx, dy=dy)
+
+        return map_tables, widths, heights
 
     def make_cluster_graph(cluster_list):
 
@@ -352,30 +469,38 @@ def make_sectors(cluster_size=8, cutoff_distance=10, make_hexkit=False):
                 if i_l != c.id:
                     G.add_edge(c.name, cluster_names[i_l])
 
-        nx.draw(G, nx.spring_layout(G), with_labels=True, node_size=200, node_color='blue', font_size=7,
-                edge_color='gray', font_color='white')
-        plt.savefig(f'atlas/{cluster_list[0].type} LINKS.png', bbox_inches='tight')
+        for c in cluster_list:
+            print(c.name)
+            print('-----------')
+            for link_id in c.links:
+                print(cluster_names[link_id])
+            print()
+            print()
+
+        fig, ax = plt.subplots(dpi=300)
+
+        nx.draw(G, nx.spring_layout(G), with_labels=True, node_size=100, node_color='blue', font_size=7,
+                edge_color='gray', font_color='white', ax=ax)
+        plt.savefig(f'atlas/hexkit/{cluster_list[0].type} LINKS.png', bbox_inches='tight')
         plt.close()
 
-    sector_list = clustering(table, 'SECTOR')
-    make_cluster_map(sector_list, table)
+    sector_list, table = clustering(table, 'SECTOR')
+
+    for sector in sector_list:
+        print(f'SECTOR {sector.name}')
+        print('-----------')
+        for i, row in sector.table.iterrows():
+            print(row['MAIN_ID'])
+        print()
+        print()
+
+    map_tables, widths, heights = make_cluster_map(sector_list, table, hex_size=hex_size)
     make_cluster_graph(sector_list)
 
-    # region_table, region_names, region_centers, region_sizes = cluster(sectors_table, 'REGION')
-    # zone_table, zone_names, zone_centers, zone_sizes = cluster(region_table, 'ZONE')
 
-    # region_region, region_pixels = make_cluster_map(sectors_table, 'REGION', region_names, region_centers, region_sizes)
-    # zone_zone, zone_pixels = make_cluster_map(region_table, 'ZONE', zone_names, zone_centers, zone_sizes)
-
-    print('DONE')
-
-
-make_sectors(cluster_size=7, cutoff_distance=7, make_hexkit=True)
+make_sectors(cluster_size=9, cutoff_distance=10, make_hexkit=True, hex_size=1)
 
 # TO DO
-# hexkit handle multiple stars per hex
-# sector numbering scheme
 # sector map title
 # add gaia stars
-# name shortening
 # combine hexmaps
