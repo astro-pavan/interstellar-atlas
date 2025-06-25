@@ -12,6 +12,7 @@ spectral_type_tile = {
     'M': 'Spaceland.Space:/Q. Stars/01. Suns/sun012.png',
     'L': 'Spaceland.Space:/Q. Stars/01. Suns/sun017.png',
     'T': 'Spaceland.Space:/Q. Stars/01. Suns/sun017.png',
+    'D': 'Spaceland.Space:/Q. Stars/01. Suns/sun030.png',
     'Y': 'Spaceland.Space:/G. Big Terra/hk-planet_017.png'
 }
 
@@ -19,15 +20,18 @@ background_tile = 'Spaceland.Space:/A. Stillness Of Space/hk_empty-space_{n:03d}
 blue_screen_tile = 'Spaceland.Space:/E. Screen/01 Blue/bluscrn-002.png'
 red_screen_tile = 'Spaceland.Space:/E. Screen/01 Blue/bluscrn-005.png'
 
+screen_layer = 3
+star_layer = 1
+orbit_layer = 2
 
 blank_label = {
                 'label': {
                     'text': '',
                     'visible': False,
-                    'fontSize': 14,
-                    'fontColor': '#000000',
-                    'borderColor': '#000000',
-                    'backgroundColor': '#FFFFFF',
+                    'fontSize': 15,
+                    'fontColor': '#FFFFFF',
+                    'borderColor': '#0000',
+                    'backgroundColor': '#0000',
                     'horizontalOffset': 0,
                     'verticalOffset': 0,
                     'opacity': 1
@@ -81,24 +85,27 @@ def make_hex_map(save, width, height, hex_data):
         while len(layers[0]['tiles']) != size:
             add_tile(0, background_tile.format(n=np.random.randint(1, 80)))
 
-        while len(layers[1]['tiles']) != size:
-            add_tile(1, blue_screen_tile)
+        while len(layers[screen_layer]['tiles']) != size:
+            add_tile(screen_layer, blue_screen_tile)
 
-        while len(layers[2]['tiles']) != size:
-            add_tile(2, None)
-            add_tile(3, None)
+        while len(layers[star_layer]['tiles']) != size:
+            add_tile(star_layer, None)
+            add_tile(orbit_layer, None)
             add_tile(4, None)
             infoLayer.append(dict(blank_label))
 
-        change_tile(1, 0, blue_screen_tile)
+        change_tile(screen_layer, 0, blue_screen_tile)
 
         for d in hex_data:
 
             if d[0].endswith(')'):
-                change_tile(1, d[1], red_screen_tile)
+                change_tile(screen_layer, d[1], red_screen_tile)
 
-            change_tile(2, d[1], spectral_type_tile[d[2]])
-            change_label(d[1], d[0])
+            if d[2] == 'TITLE':
+                change_label(d[1], d[0], title=True)
+            else:
+                change_tile(star_layer, d[1], spectral_type_tile[d[2]])
+                change_label(d[1], d[0])
 
         data['width'], data['height'] = width, height
         data['infoLayer'] = infoLayer
